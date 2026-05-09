@@ -78,6 +78,7 @@ whisper.cpp를 JNI로 통합한 단일 액티비티 + Jetpack Compose UI(미니�
   - 다운로드 실패 시 재시도, 부분 다운로드는 `.part` 임시 파일에 받고 SHA-256 검증 후 rename.
   - 체크섬은 `assets/models.json` manifest에 보관 (Task #6 참조). manifest에는 영어 모델 1개 엔트리만 둔다. 코드에 상수로 박지 않음.
 - **언어 처리**: `WhisperEngine` 내부에서 `whisper_full_params.language` 를 `"en"` 으로 하드코드. Kotlin/JNI 어느 층에서도 외부 인자로 노출하지 않는다. tiny.en 모델은 비영어 토큰 자체가 없어 별도 처리도 불필요.
+- **사용자 메시지 정책**: 비영어 입력은 인식 불가/정확도 매우 낮음. 앱은 영어 전용임을 README/UI 텍스트에서 명시한다.
 
 ### 3.3 녹음 파이프라인 → **AudioRecord (PCM 16-bit, 16kHz, mono)**
 
@@ -140,7 +141,7 @@ whisper.cpp를 JNI로 통합한 단일 액티비티 + Jetpack Compose UI(미니�
 - Windows 호스트 마이크 패스스루는 emulator 버전/드라이버에 따라 불안정한 사례 보고됨 (특히 USB 마이크).
 - **검증 전략(필수)**:
   1. 에뮬레이터 마이크가 동작하면 그대로 사용
-  2. 동작이 불안정하면 **WAV 파일 입력 경로**로 폴백 — `assets/test_ko.wav` 또는 `adb push` 한 파일을 읽어 동일 파이프라인을 통과시키는 디버그 메뉴를 제공
+  2. 동작이 불안정하면 **WAV 파일 입력 경로**로 폴백 — `assets/test_en.wav` (영어 샘플) 또는 `adb push` 한 파일을 읽어 동일 파이프라인을 통과시키는 디버그 메뉴를 제공
 - **실기기 검증 필요**: 인식 품질/지연/전력은 실기기에서만 신뢰 가능. 1단계 내 최소 1회 실기기 smoke test 권장.
 
 ### 3.7 모듈 구조 → **단일 `:app` 모듈, 패키지 분리**
