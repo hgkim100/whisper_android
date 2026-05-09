@@ -1,6 +1,6 @@
 # Whisper Android
 
-로컬 추론 기반 한국어 음성인식 Android 앱 (whisper.cpp + JNI).
+On-device English speech recognition Android app (whisper.cpp + JNI). **English only — multilingual is not supported in this or any future phase.**
 
 설계 문서: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 

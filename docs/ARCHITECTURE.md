@@ -22,7 +22,7 @@ whisper.cpp를 JNI로 통합한 단일 액티비티 + Jetpack Compose UI(미니�
 ### 2.1 Functional
 - 사용자가 녹음 버튼으로 녹음 시작/종료 (Record / Stop 토글)
 - 종료 시 PCM 오디오를 whisper.cpp에 전달, **영어** 텍스트 트랜스크립트 표시
-- **English-only 모델** 사용 (`ggml-tiny.en.bin`). 한국어/다국어 인식 미지원 (Phase 2에서 multilingual 모델 옵션화 검토)
+- **English-only 모델** 사용 (`ggml-tiny.en.bin`). 영어 외 입력은 1단계는 물론 후속 단계에서도 지원하지 않는다.
 - 첫 실행 시 GGML 모델 다운로드(% 진행률 표시), 이후는 캐시 사용
 - 트랜스크립트 결과를 화면에 표시 (스크롤 + 복사 가능). 영구 저장은 1단계 범위 외.
 
@@ -59,11 +59,11 @@ whisper.cpp를 JNI로 통합한 단일 액티비티 + Jetpack Compose UI(미니�
 
 | 옵션 | 장점 | 단점 | 결론 |
 |---|---|---|---|
-| **whisper.cpp + JNI** | 오프라인, 빠름(GGML 양자화), English/multilingual 모든 GGML 모델 그대로 사용, MIT, 공식 Android 예제 존재 | NDK/CMake 빌드 필요, JNI 인터페이스 직접 작성 | **채택** |
+| **whisper.cpp + JNI** | 오프라인, 빠름(GGML 양자화), `.en` 영어 전용 모델 그대로 로딩, MIT, 공식 Android 예제 존재 | NDK/CMake 빌드 필요, JNI 인터페이스 직접 작성 | **채택** |
 | HF Transformers Android (ONNX/TFLite) | 양자화 그래프 자동 생성, NDK 없이 가능 | 모델 변환 파이프라인 필요, NDK 회피 이외 결정적 이득 부재 | 기각 |
 | OpenAI API 원격 | 최고 품질, 코드 단순 | 오프라인 불가, API 키/요금/프라이버시, 네트워크 지연 | 기각 |
 
-**근거**: 오프라인 + 프라이버시가 핵심 가치. whisper.cpp는 안정성/속도가 입증되었고, English-only `tiny.en`을 비롯한 모든 GGML 모델 변종을 그대로 로딩 가능. 빌드 복잡도는 공식 `whisper.cpp/examples/whisper.android` 참조로 단축 가능.
+**근거**: 오프라인 + 프라이버시가 핵심 가치. whisper.cpp는 안정성/속도가 입증되었고, `tiny.en` 영어 전용 모델을 별도 옵션 없이 그대로 로딩한다. 빌드 복잡도는 공식 `whisper.cpp/examples/whisper.android` 참조로 단축 가능.
 
 ### 3.2 모델 크기 & 언어 → **ggml-tiny.en.bin (English-only), 첫 실행 시 다운로드**
 
@@ -76,8 +76,8 @@ whisper.cpp를 JNI로 통합한 단일 액티비티 + Jetpack Compose UI(미니�
 - **다운로드 전략**: Hugging Face `ggerganov/whisper.cpp` 저장소(`https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin`)에서 `ggml-tiny.en.bin`을 첫 실행 시 다운로드, `context.filesDir/models/ggml-tiny.en.bin`에 저장.
   - APK에 모델 미포함(크기/심사 영향 최소화).
   - 다운로드 실패 시 재시도, 부분 다운로드는 `.part` 임시 파일에 받고 SHA-256 검증 후 rename.
-  - 체크섬은 `assets/models.json` manifest에 보관 (Task #6 참조). 코드에 상수로 박지 않음.
-- **언어**: English-only 모델이므로 `whisper_full_params.language="en"` 고정. 한국어 등 비영어 입력은 인식 정확도가 매우 낮아짐을 사용자에게 안내할 필요는 1단계에선 없음(영어 전용 앱이라는 사실이 이름/UX에 자명).
+  - 체크섬은 `assets/models.json` manifest에 보관 (Task #6 참조). manifest에는 영어 모델 1개 엔트리만 둔다. 코드에 상수로 박지 않음.
+- **언어 처리**: `WhisperEngine` 내부에서 `whisper_full_params.language` 를 `"en"` 으로 하드코드. Kotlin/JNI 어느 층에서도 외부 인자로 노출하지 않는다. tiny.en 모델은 비영어 토큰 자체가 없어 별도 처리도 불필요.
 
 ### 3.3 녹음 파이프라인 → **AudioRecord (PCM 16-bit, 16kHz, mono)**
 
@@ -261,7 +261,7 @@ extern "C" JNIEXPORT void   Java_..._WhisperJni_release(JNIEnv*, jobject, jlong 
 | 비동기 | kotlinx.coroutines | 1.8.1 | 표준 |
 | 네트워크 | OkHttp | 4.12.0 | 모델 다운로드 (스트리밍 진행률 용이) |
 | Pref | androidx.datastore-preferences | 1.1.1 | SharedPreferences 대체 |
-| Whisper | whisper.cpp | git submodule, 최신 stable tag (예: v1.7.4 — pin 시점에 검증) | tiny.en 기본, 양자화/multilingual은 Phase 2 |
+| Whisper | whisper.cpp | git submodule, 최신 stable tag (예: v1.7.4 — pin 시점에 검증) | `tiny.en` 단일. multilingual 변종은 후속 단계에도 도입 안 함 |
 | minSdk | API 26 (Android 8.0) | — | NDK API26, 디바이스 커버리지 ~95% |
 | targetSdk | API 34 (Android 14) | — | 포워드 호환으로 API 37 AVD에서 동작. 재승격 기준은 §2.3 참조 |
 | compileSdk | API 34 | — | targetSdk와 일치, AGP 8.5.2 안전 범위 |
@@ -313,8 +313,8 @@ extern "C" JNIEXPORT void   Java_..._WhisperJni_release(JNIEnv*, jobject, jlong 
 |---|---|---|---|
 | R1 | NDK + whisper.cpp 빌드가 WSL에서 실패할 가능성 (cmake/툴체인) | 빌드 자체 막힘 | 공식 whisper.cpp `examples/whisper.android` CMake 그대로 가져와 시작. submodule + 자체 CMakeLists 최소화 |
 | R2 | 에뮬레이터 마이크 패스스루 불안정 | 인식 검증 차단 | WAV 파일 입력 폴백 경로 + 실기기 smoke test |
-| R3 | 한국어 base 모델 정확도가 기대 미달 | 사용자 가치 저하 | small 모델 옵션 노출, 추후 distil/finetuned 한국어 모델 평가 (예: `whisper-large-v3-turbo` 양자화) |
-| R4 | 모델 다운로드(첫 실행) UX | 첫인상 저하 | 진행률 명확 표시, Wi-Fi 권장 안내, 재시도 buton, 향후 tiny 번들 옵션 |
+| R3 | tiny.en 정확도가 기대 미달 (악센트/노이즈/원거리) | 사용자 가치 저하 | base.en/small.en 같은 영어 전용 상위 모델로 승격 검토 (multilingual 옵션은 정책상 배제) |
+| R4 | 모델 다운로드(첫 실행) UX | 첫인상 저하 | 진행률 명확 표시, Wi-Fi 권장 안내, 재시도 버튼, 향후 tiny.en 번들 옵션 |
 | R5 | 추론 중 ANR (UI 스레드 블록) | 앱 크래시/리뷰 | 모든 JNI 호출 `Dispatchers.Default` 코루틴, UI에서 분리 |
 
 ---
