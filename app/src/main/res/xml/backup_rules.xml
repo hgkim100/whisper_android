@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- 모델 파일은 백업하지 않음 (오프라인 다운로드 캐시) -->
+    <exclude domain="file" path="models/" />
+</full-backup-content>
