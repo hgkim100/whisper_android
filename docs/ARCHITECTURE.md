@@ -330,11 +330,10 @@ extern "C" JNIEXPORT void   Java_..._WhisperJni_release(JNIEnv*, jobject, jlong 
 6. Compose UI + ViewModel 통합
 7. 에뮬레이터 smoke test + 실기기 검증 (가능 시)
 
-### Phase 2 (이후)
+### Phase 2 (이후) — 언어 확장은 일체 포함하지 않음
 - 슬라이딩 윈도우 준스트리밍 + VAD
 - 트랜스크립트 영구 저장 (Room)
-- 다국어 자동 감지 토글
-- 모델 선택기 UI (tiny/base/small/distill-large)
+- 영어 전용 상위 모델 옵션 (`base.en`, `tiny.en-q5_1` 등). multilingual / 다국어 / 자동 언어 감지는 후속 단계에서도 도입하지 않는다.
 - 백그라운드 녹음(전경 서비스)
 
 ---
