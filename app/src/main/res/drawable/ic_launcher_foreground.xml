@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 마이크 형태의 단순 모노크롬 placeholder. Task #8 이후 디자인 교체 가능. -->
+    <path
+        android:fillColor="#E8C77A"
+        android:pathData="M54,32 m-10,0 a10,14 0 1,0 20,0 a10,14 0 1,0 -20,0 z" />
+    <path
+        android:fillColor="#E8C77A"
+        android:strokeColor="#E8C77A"
+        android:strokeWidth="3"
+        android:pathData="M40,52 a14,14 0 0 0 28,0 M54,66 L54,76 M44,76 L64,76" />
+</vector>
