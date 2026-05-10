@@ -2,10 +2,8 @@ package com.hgkim.whisperandroid.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -62,9 +60,7 @@ private fun MainScreenContent(
             Text(text = "${state.pct}%")
         }
 
-        SelectionContainer(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-        ) {
+        SelectionContainer(modifier = Modifier.fillMaxWidth().weight(1f)) {
             Text(
                 text = state.transcriptOrEmpty(),
                 modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -87,7 +83,6 @@ private fun MainScreenContent(
                 Text("Retry download")
             }
         }
-        Spacer(Modifier.height(0.dp))
     }
 }
 
