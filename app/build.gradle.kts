@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.hgkim.whisperandroid"
     compileSdk = 34
+    ndkVersion = "26.3.11579264"
 
     defaultConfig {
         applicationId = "com.hgkim.whisperandroid"
@@ -19,9 +20,26 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DCMAKE_BUILD_TYPE=Release",
+                )
+                cppFlags += "-std=c++17"
+            }
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
