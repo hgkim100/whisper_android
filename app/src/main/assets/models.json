@@ -7,7 +7,7 @@
       "filename": "ggml-tiny.en.bin",
       "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
       "size_bytes": 77704715,
-      "sha256": "REPLACE_WITH_ACTUAL_HASH_FROM_sha256sum"
+      "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f"
     }
   ]
 }
