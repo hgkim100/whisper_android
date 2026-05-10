@@ -19,6 +19,8 @@ captures/
 # Keystore (do not commit signing material)
 *.jks
 *.keystore
+**/keystore.properties
+**/whisper-keystore.properties
 
 # Logs
 *.log
