@@ -36,7 +36,7 @@ sealed interface UiState {
      * [kind] disambiguates which retry affordance the UI offers:
      *  - [ErrorKind.PermissionDenied] → "Open Settings"
      *  - [ErrorKind.DownloadFailed]   → "Retry download"
-     *  - [ErrorKind.Other]            → generic "Try again" (back to Idle)
+     *  - [ErrorKind.Other]            → mic tap retries the chain
      */
     data class Error(val message: String, val kind: ErrorKind = ErrorKind.Other) : UiState
 }
@@ -44,20 +44,29 @@ sealed interface UiState {
 enum class ErrorKind { PermissionDenied, DownloadFailed, Other }
 
 /**
- * Owns the single source of truth for the UI ([uiState]) and the three event
+ * Owns the single source of truth for the UI ([uiState]) and the four event
  * entry points the screen exposes (`onMicTap`, `onPermissionResult`,
- * `onRetryDownload`).
+ * `onPermissionGranted`, `onRetryDownload`).
  *
  * **Lazy model strategy** (per team-lead direction): the ViewModel does **not**
  * download or load the model on construction. The first `onMicTap` triggers
- * the chain `download (if missing) → load → record`, so a user who launches
- * the app without intending to record never pays the 75 MB download cost.
+ * the chain `download (if missing) → load (if needed) → record`, so a user
+ * who launches the app without intending to record never pays the 75 MB
+ * download cost.
+ *
+ * **60 s auto-stop**: `AudioRecorderImpl` enforces the 60 s ceiling via its
+ * `PcmBuffer`. When the cap is hit the capture flow terminates naturally;
+ * we treat that as if the user pressed Stop and immediately transition to
+ * `Transcribing`.
  *
  * Concurrency model:
  *  - All state mutations happen on the main thread (Compose collects).
  *  - Long-running work (download, audio capture, inference) runs on
  *    [viewModelScope]; the underlying [Transcriber] / [AudioSource] /
  *    [ModelDownloader] each own their own dispatcher.
+ *  - A single `chainJob` serialises the download → load → record chain so
+ *    overlapping `onMicTap`s can't interleave; the [startRecording] capture
+ *    coroutine has its own `captureJob` because it outlives the chain.
  *
  * Permission contract:
  *  - [onMicTap] assumes the caller has already verified `RECORD_AUDIO`
@@ -65,6 +74,8 @@ enum class ErrorKind { PermissionDenied, DownloadFailed, Other }
  *  - If the user denies permission, [com.hgkim.whisperandroid.MainActivity]
  *    calls [onPermissionResult]`(false)` and we transition to
  *    `Error(kind=PermissionDenied)`.
+ *  - When the user returns from system Settings with permission granted,
+ *    [onPermissionGranted] clears the `PermissionDenied` error back to Idle.
  */
 class MainViewModel(
     private val transcriber: Transcriber,
@@ -78,6 +89,10 @@ class MainViewModel(
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     @Volatile private var modelLoaded: Boolean = false
+
+    /** Serialises the `download → load → record` chain (single-flight). */
+    private var chainJob: Job? = null
+    /** Tracks the in-flight capture coroutine spawned by [startRecording]. */
     private var captureJob: Job? = null
     private var currentAudio: AudioSource? = null
 
@@ -89,11 +104,10 @@ class MainViewModel(
     /** User tapped the Record/Stop button. Caller must already hold RECORD_AUDIO. */
     fun onMicTap() {
         when (val s = _uiState.value) {
-            is UiState.Idle, is UiState.Result -> ensureModelThenRecord()
+            is UiState.Idle, is UiState.Result -> launchChain()
             is UiState.Recording -> stopAndTranscribe()
             is UiState.Error -> when (s.kind) {
-                ErrorKind.DownloadFailed -> ensureModelThenRecord()
-                ErrorKind.Other -> ensureModelThenRecord()
+                ErrorKind.DownloadFailed, ErrorKind.Other -> launchChain()
                 // PermissionDenied is recovered via Settings, not the mic button.
                 ErrorKind.PermissionDenied -> Unit
             }
@@ -113,34 +127,55 @@ class MainViewModel(
         // If granted, we don't auto-start — the activity calls onMicTap() next.
     }
 
+    /**
+     * Activity onResume detected `RECORD_AUDIO` is now granted (typical case:
+     * user just came back from Settings). Clear the `PermissionDenied` error
+     * if present.
+     */
+    fun onPermissionGranted() {
+        val s = _uiState.value
+        if (s is UiState.Error && s.kind == ErrorKind.PermissionDenied) {
+            _uiState.value = UiState.Idle
+        }
+    }
+
     /** Retry the download → load → record chain after a failed model download. */
     fun onRetryDownload() {
-        ensureModelThenRecord()
+        launchChain()
     }
 
     // ----- Internals ---------------------------------------------------------
 
     /**
-     * Single entry point that drives the full
+     * Single-flight launcher for [ensureModelThenRecord]. Drops re-entries while
+     * a chain is already in flight — the UI's mic button is also disabled in
+     * `ModelDownloading`/`Transcribing` so this is mostly a defensive guard
+     * against rogue external callers (per reviewer-3 follow-up #2).
+     */
+    private fun launchChain() {
+        chainJob?.takeIf { it.isActive }?.let { return }
+        chainJob = viewModelScope.launch { ensureModelThenRecord() }
+    }
+
+    /**
+     * Drives the full
      * `download (if needed) → load (if needed) → start recording` chain.
      * Each phase emits its own UiState transition; failures land in
      * [UiState.Error] with an appropriate [ErrorKind].
      */
-    private fun ensureModelThenRecord() {
-        viewModelScope.launch {
-            // Phase 1 — make sure the model file is on disk.
-            if (!modelStore.isModelReady(modelEntry)) {
-                val downloaded = downloadModel()
-                if (!downloaded) return@launch  // Failed already emitted
-            }
-            // Phase 2 — make sure the native context is loaded.
-            if (!modelLoaded) {
-                val loaded = loadModel()
-                if (!loaded) return@launch
-            }
-            // Phase 3 — begin capture.
-            startRecording()
+    private suspend fun ensureModelThenRecord() {
+        // Phase 1 — make sure the model file is on disk.
+        if (!modelStore.isModelReady(modelEntry)) {
+            val downloaded = downloadModel()
+            if (!downloaded) return  // Failed already emitted
         }
+        // Phase 2 — make sure the native context is loaded.
+        if (!modelLoaded) {
+            val loaded = loadModel()
+            if (!loaded) return
+        }
+        // Phase 3 — begin capture.
+        startRecording()
     }
 
     /** @return true if the model is now on disk; false if Failed was emitted. */
@@ -178,6 +213,12 @@ class MainViewModel(
             true
         } catch (ce: CancellationException) {
             throw ce
+        } catch (oom: OutOfMemoryError) {
+            _uiState.value = UiState.Error(
+                message = "Out of memory while loading the model. Free some memory and try again.",
+                kind = ErrorKind.Other,
+            )
+            false
         } catch (t: Throwable) {
             _uiState.value = UiState.Error(
                 message = "Failed to load model: ${t.message ?: t.javaClass.simpleName}",
@@ -193,11 +234,23 @@ class MainViewModel(
         _uiState.value = UiState.Recording
         captureJob = viewModelScope.launch {
             try {
-                // Drain chunks; AudioRecorderImpl accumulates via PcmBuffer
-                // and stop() returns the FloatArray.
+                // Drain chunks; AudioRecorderImpl accumulates via PcmBuffer and
+                // stop() returns the FloatArray.
                 audio.start().collect { /* discard */ }
+                // Reaching here = upstream completed naturally (60 s buffer cap or
+                // file source exhausted). Auto-trigger transcription so the user
+                // sees a result without having to mash the button.
+                if (_uiState.value is UiState.Recording) {
+                    stopAndTranscribe()
+                }
             } catch (ce: CancellationException) {
                 throw ce
+            } catch (oom: OutOfMemoryError) {
+                _uiState.value = UiState.Error(
+                    message = "Out of memory during recording. Try a shorter take.",
+                    kind = ErrorKind.Other,
+                )
+                currentAudio = null
             } catch (t: Throwable) {
                 _uiState.value = UiState.Error(
                     message = "Recording failed: ${t.message ?: t.javaClass.simpleName}",
@@ -223,6 +276,11 @@ class MainViewModel(
                 _uiState.value = UiState.Result(text)
             } catch (ce: CancellationException) {
                 throw ce
+            } catch (oom: OutOfMemoryError) {
+                _uiState.value = UiState.Error(
+                    message = "Out of memory during transcription. Try a shorter take.",
+                    kind = ErrorKind.Other,
+                )
             } catch (t: Throwable) {
                 _uiState.value = UiState.Error(
                     message = "Transcription failed: ${t.message ?: t.javaClass.simpleName}",
@@ -234,6 +292,7 @@ class MainViewModel(
 
     override fun onCleared() {
         captureJob?.cancel()
+        chainJob?.cancel()
         if (modelLoaded) {
             transcriber.release()
             modelLoaded = false

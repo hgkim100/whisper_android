@@ -22,9 +22,9 @@ import com.hgkim.whisperandroid.ui.theme.WhisperAndroidTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: MainViewModel by viewModels {
-        MainViewModel.factory((application as WhisperApp).container)
-    }
+    private val container by lazy { (application as WhisperApp).container }
+
+    private val viewModel: MainViewModel by viewModels { MainViewModel.factory(container) }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -55,13 +55,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handleMicTap() {
-        val granted = ContextCompat.checkSelfPermission(
+    override fun onResume() {
+        super.onResume()
+        // If the user just came back from Settings with permission granted,
+        // clear the PermissionDenied error state automatically (per
+        // reviewer-3 follow-up #1).
+        if (hasRecordPermission()) {
+            viewModel.onPermissionGranted()
+        }
+    }
+
+    private fun hasRecordPermission(): Boolean =
+        ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (granted) {
+    private fun handleMicTap() {
+        if (hasRecordPermission()) {
             viewModel.onMicTap()
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
